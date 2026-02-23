@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>회원 DB 관리 시스템</title>
+    <style>
+        body { font-family: 'Malgun Gothic', sans-serif; padding: 20px; background-color: #f4f7f6; }
+        h2 { color: #333; }
+        .controls { margin-bottom: 20px; background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        textarea { width: 100%; height: 100px; margin-bottom: 10px; padding: 10px; box-sizing: border-box; }
+        button { padding: 8px 15px; cursor: pointer; background-color: #0056b3; color: white; border: none; border-radius: 4px; }
+        button:hover { background-color: #004494; }
+        table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+        th { background-color: #e9ecef; cursor: pointer; position: relative; }
+        th:hover { background-color: #d6d8db; }
+        .kick-alert { color: white; background-color: #dc3545; font-weight: bold; padding: 5px; border-radius: 4px; display: inline-block; }
+        input[type="text"], input[type="date"], select { padding: 4px; width: 90%; box-sizing: border-box; }
+        .edit-room-container { display: flex; flex-direction: column; gap: 5px; align-items: center; }
+        .edit-room-container div { display: flex; gap: 5px; align-items: center; }
+    </style>
+</head>
+<body>
+
+    <h2>👥 VIP 회원 관리 시스템</h2>
+
+    <div class="controls">
+        <h3>일괄 추가 (엑셀에서 복사 후 붙여넣기)</h3>
+        <p>형식: 번호 [탭] 이름 [탭] 전화번호 [탭] 접속경로 [탭] 유료접속방(예: - VIP실버 (2026-02-23~2026-03-30))</p>
+        <textarea id="bulkData" placeholder="엑셀 데이터를 붙여넣으세요..."></textarea><br>
+        <button id="addBulkBtn">데이터 일괄 추가</button>
+    </div>
+
+    <table id="dataTable">
+        <thead>
+            <tr>
+                <th onclick="sortTable('id')">번호 ↕</th>
+                <th onclick="sortTable('name')">이름 ↕</th>
+                <th onclick="sortTable('phone')">전화번호 ↕</th>
+                <th onclick="sortTable('path')">접속경로 ↕</th>
+                <th onclick="sortTable('room')">유료접속방(유료회원) ↕</th>
+                <th onclick="sortTable('voucher')">무료 바우처 기간 ↕</th>
+                <th onclick="sortTable('kick')">텔레그램 추방 여부 확인 ↕</th>
+            </tr>
+        </thead>
+        <tbody id="tableBody">
+            </tbody>
+    </table>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+        import { getFirestore, collection, getDocs, updateDoc, doc, writeBatch } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
+
+        // 사용자 제공 Firebase 설정
+        const firebaseConfig = {
+            apiKey: "AIzaSyBkdZkr8E9di03l6nDNNssbwAKMlCFlXN4",
+            authDomain: "fuinv-teledb.firebaseapp.com",
+            projectId: "fuinv-teledb",
+            storageBucket: "fuinv-teledb.firebasestorage.app",
+            messagingSenderId: "975319017229",
+            appId: "1:975319017229:web:ee86df8938537c08f5f244"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const membersCol = collection(db, "members");
+
+        let currentData = [];
+        let sortCol = '';
+        let sortAsc = true;
+
+        // 1. 데이터 불러오기
+        async function loadData() {
+            try {
+                const snapshot = await getDocs(membersCol);
+                currentData = snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
+                renderTable();
+            } catch (error) {
+                console.error("데이터 로드 오류:", error);
+                alert("데이터를 불러오는 중 오류가 발생했습니다. 권한 설정(Rules)을 확인해주세요.");
+            }
+        }
+
+        // 2. 날짜 계산 로직 (바우처 적용)
+        function calculateFinalDate(endDateStr, voucherStr) {
+            if (!endDateStr) return null;
+            let date = new Date(endDateStr);
+            if (voucherStr) {
+                let num = parseInt(voucherStr.replace(/[^0-9]/g, '')) || 0;
+                if (voucherStr.includes('개월')) date.setMonth(date.getMonth() + num);
+                else if (voucherStr.includes('주')) date.setDate(date.getDate() + (num * 7));
+                else if (voucherStr.includes('일')) date.setDate(date.getDate() + num);
+            }
+            return date;
+        }
+
+        // 3. 테이블 렌더링
+        window.renderTable = function() {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+            
+            let today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            currentData.forEach(item => {
+                const tr = document.createElement('tr');
+                
+                // 바우처 적용 최종 날짜 계산
+                let finalDate = calculateFinalDate(item.endDate, item.voucher);
+                let kickStatus = "";
+                if (finalDate && finalDate < today) {
+                    kickStatus = "<span class='kick-alert'>계약 만료-텔레그램 추방 필요</span>";
+                }
+
+                // 유료접속방 문자열 조합
+                let roomString = item.roomType ? `- ${item.roomType} (${item.startDate}~${item.endDate})` : "";
+
+                tr.innerHTML = `
+                    <td ondblclick="editCell('${item.docId}', 'id', '${item.id || ''}')">${item.id || ''}</td>
+                    <td ondblclick="editCell('${item.docId}', 'name', '${item.name || ''}')">${item.name || ''}</td>
+                    <td ondblclick="editCell('${item.docId}', 'phone', '${item.phone || ''}')">${item.phone || ''}</td>
+                    <td ondblclick="editCell('${item.docId}', 'path', '${item.path || ''}')">${item.path || ''}</td>
+                    <td ondblclick="editRoomCell('${item.docId}', '${item.roomType || ''}', '${item.startDate || ''}', '${item.endDate || ''}')">${roomString}</td>
+                    <td ondblclick="editCell('${item.docId}', 'voucher', '${item.voucher || ''}')">${item.voucher || ''}</td>
+                    <td>${kickStatus}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        };
+
+        // 4. 일반 셀 인라인 수정
+        window.editCell = function(docId, field, value) {
+            const new_value = prompt("수정할 값을 입력하세요:", value === 'undefined' ? '' : value);
+            if (new_value !== null && new_value !== value) {
+                updateData(docId, { [field]: new_value });
+            }
+        };
+
+        // 5. 유료접속방(콤보박스+달력) 인라인 수정
+        window.editRoomCell = function(docId, currentType, currentStart, currentEnd) {
+            const tr = event.target.closest('td');
+            tr.innerHTML = `
+                <div class="edit-room-container">
+                    <select id="selType_${docId}">
+                        <option value="VIP실버" ${currentType==='VIP실버'?'selected':''}>VIP실버</option>
+                        <option value="VIP골드" ${currentType==='VIP골드'?'selected':''}>VIP골드</option>
+                        <option value="VIP다이아" ${currentType==='VIP다이아'?'selected':''}>VIP다이아</option>
+                        <option value="Value-Up" ${currentType==='Value-Up'?'selected':''}>Value-Up</option>
+                    </select>
+                    <div>
+                        <input type="date" id="selStart_${docId}" value="${currentStart}"> ~ 
+                        <input type="date" id="selEnd_${docId}" value="${currentEnd}">
+                    </div>
+                    <div>
+                        <button onclick="saveRoom('${docId}')" style="font-size:12px; padding:3px 8px;">저장</button>
+                        <button onclick="renderTable()" style="font-size:12px; padding:3px 8px; background-color:#6c757d;">취소</button>
+                    </div>
+                </div>
+            `;
+            tr.removeAttribute("ondblclick"); // 편집 중 중복 클릭 방지
+        };
+
+        window.saveRoom = async function(docId) {
+            const newType = document.getElementById(`selType_${docId}`).value;
+            const newStart = document.getElementById(`selStart_${docId}`).value;
+            const newEnd = document.getElementById(`selEnd_${docId}`).value;
+            
+            await updateData(docId, { roomType: newType, startDate: newStart, endDate: newEnd });
+        };
+
+        // 6. DB 업데이트 로직 (수정)
+        window.updateData = async function(docId, updateObj) {
+            try {
+                const docRef = doc(db, "members", docId);
+                await updateDoc(docRef, updateObj);
+                
+                // 로컬 배열 업데이트
+                let index = currentData.findIndex(d => d.docId === docId);
+                if (index > -1) {
+                    currentData[index] = { ...currentData[index], ...updateObj };
+                }
+                renderTable();
+            } catch (e) {
+                alert("수정 실패: " + e.message);
+                console.error(e);
+            }
+        };
+
+        // 7. 정렬 기능
+        window.sortTable = function(column) {
+            sortAsc = sortCol === column ? !sortAsc : true;
+            sortCol = column;
+
+            currentData.sort((a, b) => {
+                let valA = a[column] || '';
+                let valB = b[column] || '';
+
+                // 숫자형 정렬 (번호)
+                if (column === 'id') {
+                    valA = parseInt(valA) || 0;
+                    valB = parseInt(valB) || 0;
+                }
+                
+                // 추방 여부 정렬 기준 생성 (endDate + voucher)
+                if (column === 'kick') {
+                    valA = calculateFinalDate(a.endDate, a.voucher) || new Date(0);
+                    valB = calculateFinalDate(b.endDate, b.voucher) || new Date(0);
+                }
+
+                if (valA < valB) return sortAsc ? -1 : 1;
+                if (valA > valB) return sortAsc ? 1 : -1;
+                return 0;
+            });
+            renderTable();
+        };
+
+        // 8. 엑셀 데이터 일괄 추가 (Bulk Add)
+        document.getElementById('addBulkBtn').addEventListener('click', async () => {
+            const text = document.getElementById('bulkData').value.trim();
+            if (!text) return alert("데이터를 입력하세요.");
+
+            const lines = text.split('\n');
+            const batch = writeBatch(db);
+
+            lines.forEach(line => {
+                const parts = line.split('\t'); // 탭으로 구분
+                if (parts.length < 5) return; // 데이터가 부족하면 스킵
+
+                const [id, name, phone, path, roomRaw] = parts;
+                
+                // 정규식으로 유료접속방 파싱
+                const match = roomRaw.match(/-\s*(VIP실버|VIP골드|VIP다이아|Value-Up)\s*\((.*?)\~(.*?)\)/);
+                let roomType = match ? match[1] : '';
+                let startDate = match ? match[2].trim() : '';
+                let endDate = match ? match[3].trim() : '';
+
+                const newDocRef = doc(collection(db, "members"));
+                batch.set(newDocRef, {
+                    id: id.trim(),
+                    name: name.trim(),
+                    phone: phone.trim(),
+                    path: path.trim(),
+                    roomType: roomType,
+                    startDate: startDate,
+                    endDate: endDate,
+                    voucher: '' // 초기 바우처는 빈칸
+                });
+            });
+
+            try {
+                await batch.commit();
+                alert("일괄 추가가 완료되었습니다!");
+                document.getElementById('bulkData').value = '';
+                loadData();
+            } catch (e) {
+                alert("추가 중 오류 발생: " + e.message + "\nFirestore 규칙(Rules)이 쓰기를 허용하는지 확인하세요.");
+                console.error(e);
+            }
+        });
+
+        // 초기 데이터 로드
+        loadData();
+    </script>
+</body>
+</html>
