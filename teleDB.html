@@ -859,7 +859,7 @@
                 let manager = '';
 
                 // 🔥 전화번호 기준으로 파싱
-                const phoneIndex = parts.findIndex(p => /^\d{10,11}$/.test(p));
+                const phoneIndex = parts.findIndex(p => { const cleaned = p.replace(/[^0-9]/g, ''); return cleaned.length >= 10 && cleaned.length <= 11; });
 
                 if (phoneIndex !== -1) {
                     name = parts.slice(0, phoneIndex).join(" ").trim();
@@ -977,7 +977,7 @@
                 let phone = '';
 
                 // 🔥 전화번호 기준 파싱
-                const phoneIndex = parts.findIndex(p => /^\d{10,11}$/.test(p));
+                const phoneIndex = parts.findIndex(p => { const cleaned = p.replace(/[^0-9]/g, ''); return cleaned.length >= 10 && cleaned.length <= 11; });
 
                 if (phoneIndex !== -1) {
                     name = parts.slice(0, phoneIndex).join(" ").trim();
