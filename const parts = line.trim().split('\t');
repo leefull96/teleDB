@@ -838,7 +838,7 @@
         });
 
         document.getElementById('executeManagerBulk').addEventListener('click', async () => {
-
+        
             const text = document.getElementById('managerBulkText').value;
             if (!text.trim()) return alert("데이터를 입력하세요.");
         
@@ -848,19 +848,24 @@
             let errorLines = [];
         
             for (let i = 0; i < lines.length; i++) {
-
+        
                 const rawLine = lines[i].trim();
                 if (!rawLine) continue;
-            
-                const parts = lines[i].trim().split(/\s+/);
-
+        
+                // 🔥 공백/탭 모두 허용
+                const parts = rawLine.split(/\s+/);
+        
                 let name = '';
                 let phone = '';
                 let manager = '';
-
-                // 🔥 전화번호 기준으로 파싱
-                const phoneIndex = parts.findIndex(p => { const cleaned = p.replace(/[^0-9]/g, ''); return cleaned.length >= 10 && cleaned.length <= 11; });
-
+        
+                // 🔥 전화번호 찾기
+                const phoneIndex = parts.findIndex(p => {
+                    const cleaned = p.replace(/[^0-9]/g, '');
+                    return cleaned.length >= 10 && cleaned.length <= 11;
+                });
+        
+                // 🔥 파싱
                 if (phoneIndex !== -1) {
                     name = parts.slice(0, phoneIndex).join(" ").trim();
                     phone = parts[phoneIndex].replace(/[^0-9]/g, '');
@@ -868,50 +873,37 @@
                 } else {
                     name = (parts[0] || '').trim();
                     phone = (parts[1] || '').replace(/[^0-9]/g, '');
-                    manager = (parts[2] || '').trim();
+                    manager = parts.slice(2).join(" ").trim();
                 }
-
+        
                 let errorMsg = [];
-            
-                // 🔎 필드별 검증
-                if (!name) {
-                    errorMsg.push("이름이 비어있습니다");
-                }
-            
-                if (!phoneRaw) {
+        
+                if (!name) errorMsg.push("이름이 비어있습니다");
+        
+                if (!phone) {
                     errorMsg.push("전화번호가 비어있습니다");
-                } else if (!/^\d{10,11}$/.test(phone)) {
-                    errorMsg.push("전화번호는 10~11자리 숫자여야 합니다");
+                } else if (phone.length < 10 || phone.length > 11) {
+                    errorMsg.push("전화번호 형식이 잘못되었습니다");
                 }
-            
-                if (!manager) {
-                    errorMsg.push("담당자가 비어있습니다");
-                }
-            
-                // 형식 자체가 3개가 아닌 경우
-                if (parts.length !== 3) {
-                    errorMsg.push("입력 형식이 올바르지 않습니다 (이름 전화번호 담당자)");
-                }
-            
+        
+                if (!manager) errorMsg.push("담당자가 비어있습니다");
+        
                 if (errorMsg.length > 0) {
-                    errorLines.push(
-                        `${rawLine} : ${errorMsg.join(", ")}`
-                    );
+                    errorLines.push(`${rawLine} : ${errorMsg.join(", ")}`);
                     continue;
                 }
-            
-                const target = currentData.find(d =>
-                    d.name === name &&
-                    d.phone.replace(/[^0-9]/g, '') === phone
-                );
-            
+        
+                // 🔥 핵심 수정 (전화번호 비교 안정화)
+                const target = currentData.find(d => {
+                    const dbPhone = (d.phone || '').replace(/[^0-9]/g, '');
+                    return d.name === name && dbPhone === phone;
+                });
+        
                 if (!target) {
-                    errorLines.push(
-                        `${rawLine} : DB에 일치하는 회원이 없습니다`
-                    );
+                    errorLines.push(`${rawLine} : DB에 일치하는 회원이 없습니다`);
                     continue;
                 }
-            
+        
                 const docRef = doc(db, "members", target.docId);
                 batch.update(docRef, { manager: manager });
             }
@@ -922,17 +914,11 @@
         
                 if (errorLines.length > 0) {
         
-                    const errorWindow = window.open(
-                        "",
-                        "errorWindow",
-                        "width=500,height=300"
-                    );
+                    const errorWindow = window.open("", "errorWindow", "width=500,height=300");
         
                     errorWindow.document.write(`
                         <html>
-                        <head>
-                            <title>오류 목록</title>
-                        </head>
+                        <head><title>오류 목록</title></head>
                         <body style="font-size:13px; font-family:Arial; padding:15px;">
                             <h4>⚠ 처리되지 않은 항목</h4>
                             <div style="white-space:pre-line;">
@@ -955,7 +941,7 @@
         });
 
         document.getElementById('executeManagerSearch').addEventListener('click', () => {
-
+        
             const text = document.getElementById('managerSearchText').value;
         
             if (!text.trim()) {
@@ -969,16 +955,21 @@
         
             lines.forEach(line => {
         
-                if (!line.trim()) return;
+                const rawLine = line.trim();
+                if (!rawLine) return;
         
-                const parts = line.trim().split(/\s+/);
-
+                // 🔥 공백/탭 모두 허용
+                const parts = rawLine.split(/\s+/);
+        
                 let name = '';
                 let phone = '';
-
-                // 🔥 전화번호 기준 파싱
-                const phoneIndex = parts.findIndex(p => { const cleaned = p.replace(/[^0-9]/g, ''); return cleaned.length >= 10 && cleaned.length <= 11; });
-
+        
+                // 🔥 전화번호 찾기
+                const phoneIndex = parts.findIndex(p => {
+                    const cleaned = p.replace(/[^0-9]/g, '');
+                    return cleaned.length >= 10 && cleaned.length <= 11;
+                });
+        
                 if (phoneIndex !== -1) {
                     name = parts.slice(0, phoneIndex).join(" ").trim();
                     phone = parts[phoneIndex].replace(/[^0-9]/g,'');
@@ -986,11 +977,12 @@
                     name = (parts[0] || '').trim();
                     phone = (parts[1] || '').replace(/[^0-9]/g,'');
                 }
-
-                const target = currentData.find(d =>
-                    d.name === name &&
-                    d.phone.replace(/[^0-9]/g,'') === phone
-                );
+        
+                // 🔥 핵심 수정 (여기도 동일)
+                const target = currentData.find(d => {
+                    const dbPhone = (d.phone || '').replace(/[^0-9]/g, '');
+                    return d.name === name && dbPhone === phone;
+                });
         
                 if (target) {
                     results.push(target);
@@ -1020,14 +1012,14 @@
             <body>
         
             <h3>검색 결과</h3>
-
+        
             <button onclick="navigator.clipboard.writeText(
             Array.from(document.querySelectorAll('#resultTable tr'))
             .slice(1)
             .map(r=>Array.from(r.children).map(c=>c.innerText).join('\\t'))
             .join('\\n')
             )" style="margin-bottom:10px;">📋 결과 복사</button>
-            
+        
             <table id="resultTable">
             <tr>
                 <th>이름</th>
