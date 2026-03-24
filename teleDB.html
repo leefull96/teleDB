@@ -852,16 +852,25 @@
                 const rawLine = lines[i].trim();
                 if (!rawLine) continue;
             
-                const parts = lines[i].trim().split('\t');
-            
-                const nameRaw = parts[0] || '';
-                const phoneRaw = parts[1] || '';
-                const managerRaw = parts[2] || '';
-            
-                const name = nameRaw.trim();
-                const phone = phoneRaw.replace(/[^0-9]/g, '');
-                const manager = managerRaw.trim();
-            
+                const parts = lines[i].trim().split(/\s+/);
+
+                let name = '';
+                let phone = '';
+                let manager = '';
+
+                // 🔥 전화번호 기준으로 파싱
+                const phoneIndex = parts.findIndex(p => /^\d{10,11}$/.test(p));
+
+                if (phoneIndex !== -1) {
+                    name = parts.slice(0, phoneIndex).join(" ").trim();
+                    phone = parts[phoneIndex].replace(/[^0-9]/g, '');
+                    manager = parts.slice(phoneIndex + 1).join(" ").trim();
+                } else {
+                    name = (parts[0] || '').trim();
+                    phone = (parts[1] || '').replace(/[^0-9]/g, '');
+                    manager = (parts[2] || '').trim();
+                }
+
                 let errorMsg = [];
             
                 // 🔎 필드별 검증
@@ -962,11 +971,22 @@
         
                 if (!line.trim()) return;
         
-                const parts = line.trim().split('\t');
-        
-                const name = (parts[0] || '').trim();
-                const phone = (parts[1] || '').replace(/[^0-9]/g,'');
-        
+                const parts = line.trim().split(/\s+/);
+
+                let name = '';
+                let phone = '';
+
+                // 🔥 전화번호 기준 파싱
+                const phoneIndex = parts.findIndex(p => /^\d{10,11}$/.test(p));
+
+                if (phoneIndex !== -1) {
+                    name = parts.slice(0, phoneIndex).join(" ").trim();
+                    phone = parts[phoneIndex].replace(/[^0-9]/g,'');
+                } else {
+                    name = (parts[0] || '').trim();
+                    phone = (parts[1] || '').replace(/[^0-9]/g,'');
+                }
+
                 const target = currentData.find(d =>
                     d.name === name &&
                     d.phone.replace(/[^0-9]/g,'') === phone
