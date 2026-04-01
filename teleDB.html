@@ -72,8 +72,46 @@
         .inline-editor:focus {
             outline: 2px solid #007bff;
         }
+
+        /* ===== 텔레그램 명단 전용 ===== */
+        #teleTableBody tr.dragging {
+            opacity: 0.45;
+            background-color: #d8ebff;
+        }
         
-    </style>
+        #teleTableBody tr:hover {
+            background-color: #f4f9ff;
+        }
+        
+        .tele-order-cell {
+            width: 42px;
+            cursor: grab;
+            user-select: none;
+            text-align: center;
+            font-weight: bold;
+        }
+        
+        .tele-order-cell:active {
+            cursor: grabbing;
+        }
+        
+        .tele-delete-cell {
+            width: 60px;
+            text-align: center;
+        }
+        
+        .tele-delete-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 3px 8px;
+            cursor: pointer;
+        }
+        
+        .tele-delete-btn:hover {
+            background: #b52a37;
+        </style>
 </head>
 <body>
 
@@ -149,9 +187,12 @@
             <table>
                 <thead>
                     <tr>
-                        <th style="width: 35%;">텔레그램 구독자 명단에 적힌 실제 이름</th>
-                        <th style="width: 30%;">예상 가능한 이름</th>
-                        <th style="width: 35%;">특이사항</th>
+                        <th style="width: 5%;">↕</th>
+                        <th style="width: 32%;">텔레그램 구독자 명단에 적힌 실제 이름</th>
+                        <th style="width: 28%;">예상 가능한 이름</th>
+                        <th style="width: 25%;">특이사항</th>
+                        <th style="width: 10%;">삭제</th>
+
                     </tr>
                 </thead>
                 <tbody id="teleTableBody">
@@ -203,7 +244,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-        import { getFirestore, collection, getDocs, updateDoc, doc, writeBatch, addDoc } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
+        import { getFirestore, collection, getDocs, updateDoc, doc, writeBatch, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBkdZkr8E9di03l6nDNNssbwAKMlCFlXN4",
@@ -1164,21 +1205,58 @@
         function renderTeleTable() {
             const tbody = document.getElementById('teleTableBody');
             tbody.innerHTML = '';
-
+        
             if (currentTeleData.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="3" style="color:#777;">등록된 명단이 없습니다.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="5" style="color:#777;">등록된 명단이 없습니다.</td></tr>`;
                 return;
             }
-
-            currentTeleData.forEach(item => {
+        
+            currentTeleData.forEach((item, index) => {
                 const tr = document.createElement('tr');
+                tr.draggable = true;
+                tr.dataset.docId = item.docId;
+        
                 tr.innerHTML = `
+                    <td class="tele-order-cell">☰</td>
                     <td ondblclick="editTeleCell('${item.docId}', 'actualName', '${item.actualName || ''}')">${item.actualName || ''}</td>
                     <td ondblclick="editTeleCell('${item.docId}', 'expectedName', '${item.expectedName || ''}')">${item.expectedName || ''}</td>
                     <td ondblclick="editTeleCell('${item.docId}', 'remarks', '${item.remarks || ''}')">${item.remarks || ''}</td>
+                    <td class="tele-delete-cell">
+                        <button class="tele-delete-btn" onclick="deleteTeleMember('${item.docId}')">삭제</button>
+                    </td>
                 `;
+        
+                tr.addEventListener('dragstart', () => {
+                    tr.classList.add('dragging');
+                });
+        
+                tr.addEventListener('dragend', () => {
+                    tr.classList.remove('dragging');
+                    updateTeleOrder();
+                });
+        
                 tbody.appendChild(tr);
             });
+        
+            tbody.ondragover = function(e) {
+                e.preventDefault();
+        
+                const dragging = tbody.querySelector('.dragging');
+                if (!dragging) return;
+        
+                const rows = [...tbody.querySelectorAll('tr:not(.dragging)')];
+        
+                const nextRow = rows.find(row => {
+                    const rect = row.getBoundingClientRect();
+                    return e.clientY < rect.top + rect.height / 2;
+                });
+        
+                if (nextRow) {
+                    tbody.insertBefore(dragging, nextRow);
+                } else {
+                    tbody.appendChild(dragging);
+                }
+            };
         }
 
         document.getElementById('addTeleMemberBtn').addEventListener('click', async () => {
@@ -1213,6 +1291,36 @@
             }
         };
 
+        window.deleteTeleMember = async function(docId) {
+            if (!confirm('정말 삭제하시겠습니까?')) return;
+        
+            try {
+                await deleteDoc(doc(db, "telegram_members", docId));
+                currentTeleData = currentTeleData.filter(item => item.docId !== docId);
+                renderTeleTable();
+            } catch(e) {
+                alert("삭제 실패: " + e.message);
+            }
+        };
+        
+        window.updateTeleOrder = async function() {
+            const rows = [...document.querySelectorAll('#teleTableBody tr')];
+        
+            currentTeleData = rows.map(row => {
+                return currentTeleData.find(item => item.docId === row.dataset.docId);
+            });
+        
+            const batch = writeBatch(db);
+        
+            currentTeleData.forEach((item, index) => {
+                if (!item) return;
+                batch.update(doc(db, "telegram_members", item.docId), {
+                    order: index
+                });
+            });
+        
+            await batch.commit();
+        };
         loadData();
     </script>
 </body>
